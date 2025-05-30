@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+pydantic
+pandas
+numpy
+joblib
+gdown
+tensorflow
+pillow
+scikit-learn
+catboost
+python-multipart
+google-cloud-storage
+scikeras
