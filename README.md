@@ -1,89 +1,35 @@
-# Medical Disease Prediction API 🏥🤖
+# Disease Prediction API
 
-A comprehensive FastAPI service for predicting multiple diseases using machine learning models. The API supports predictions for Parkinson's disease, Wilson's disease, Liver disease, and Colorectal cancer.
+A FastAPI-based service that provides machine learning predictions for multiple diseases:
+- Parkinson's Disease (numeric features & drawing analysis)
+- Wilson's Disease
+- Liver Disease
+- Colorectal Cancer
 
 ## 🚀 Features
 
-- **Parkinson's Disease**: Prediction from clinical data and spiral drawing analysis
-- **Wilson's Disease**: Clinical data-based prediction with biochemical markers
-- **Liver Disease**: Hepatic function assessment
-- **Colorectal Cancer**: Risk assessment based on lifestyle and nutritional factors
-- **Cloud Integration**: Models automatically downloaded from Google Cloud Storage
-- **Interactive Documentation**: Built-in Swagger UI
+- **Multiple Disease Predictions**: Single endpoint for each disease type
+- **Batch Processing**: Excel file upload support for bulk predictions
+- **Image Analysis**: Spiral drawing analysis for Parkinson's disease
+- **Input Validation**: Comprehensive validation of input data
+- **Swagger Documentation**: Interactive API documentation at `/docs`
 
-## 📋 Prerequisites
+## 🛠️ Technologies
 
-- Python 3.8 or higher
-- Google Cloud Storage access (for model downloading)
-- pip package manager
+- FastAPI
+- TensorFlow
+- scikit-learn
+- Pandas
+- Docker
+- Google Cloud Platform (Cloud Run & Storage)
 
-## 🛠️ Installation & Setup
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/mohammed-2-5/model_api.git
-cd model_api
-```
-
-### 2. Create Virtual Environment
-
-```bash
-# Create virtual environment
-python -m venv .venv
-
-# Activate virtual environment
-# On Windows:
-.venv\Scripts\activate
-# On macOS/Linux:
-source .venv/bin/activate
-```
-
-### 3. Install Dependencies
-
-```bash
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-### 4. Configure Google Cloud Storage
-
-Ensure you have proper Google Cloud credentials configured:
-
-```bash
-# Option 1: Set environment variable
-export GOOGLE_APPLICATION_CREDENTIALS="path/to/your/service-account-key.json"
-
-# Option 2: Use gcloud CLI
-gcloud auth application-default login
-```
-
-### 5. Run the Application
-
-```bash
-# Development server with auto-reload
-uvicorn app:app --reload --host 0.0.0.0 --port 8000
-
-# Production server
-uvicorn app:app --host 0.0.0.0 --port 8000
-```
-
-## 📖 API Documentation
-
-Once the server is running, access the interactive API documentation:
-
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-
-## 🔗 API Endpoints
+## 📋 API Endpoints
 
 ### Parkinson's Disease
 
 #### 1. Numeric Prediction
 - **Endpoint**: `POST /predict`
-- **Description**: Predict Parkinson's disease from clinical data
-
-**Example Request:**
+- **Input Example**:
 ```json
 {
   "UPDRS": 67.83,
@@ -103,15 +49,13 @@ Once the server is running, access the interactive API documentation:
 
 #### 2. Drawing Analysis
 - **Endpoint**: `POST /predict_image`
-- **Description**: Analyze spiral drawings for Parkinson's detection
-- **Input**: Image file (PNG, JPG, etc.)
+- **Input**: Image file (spiral drawing)
 
 ### Wilson's Disease
 
+#### 1. Single Prediction
 - **Endpoint**: `POST /predict_wilson`
-- **Description**: Predict Wilson's disease from clinical markers
-
-**Example Request:**
+- **Input Example**:
 ```json
 {
   "Age": 35,
@@ -129,12 +73,15 @@ Once the server is running, access the interactive API documentation:
 }
 ```
 
+#### 2. Batch Prediction
+- **Endpoint**: `POST /predict_wilson_excel`
+- **Input**: Excel file with multiple patient records
+
 ### Liver Disease
 
+#### 1. Single Prediction
 - **Endpoint**: `POST /predict_liver`
-- **Description**: Assess liver disease risk
-
-**Example Request:**
+- **Input Example**:
 ```json
 {
   "Total Bilirubin": 1.5,
@@ -148,12 +95,15 @@ Once the server is running, access the interactive API documentation:
 }
 ```
 
+#### 2. Batch Prediction
+- **Endpoint**: `POST /predict_liver_excel`
+- **Input**: Excel file with multiple patient records
+
 ### Colorectal Cancer
 
+#### 1. Single Prediction
 - **Endpoint**: `POST /predict_colorectal`
-- **Description**: Assess colorectal cancer risk
-
-**Example Request:**
+- **Input Example**:
 ```json
 {
   "Age": 65,
@@ -171,157 +121,85 @@ Once the server is running, access the interactive API documentation:
 }
 ```
 
-## 🧪 Quick Test Commands
+#### 2. Batch Prediction
+- **Endpoint**: `POST /predict_colorectal_excel`
+- **Input**: Excel file with multiple patient records
 
-### Using curl
-
-```bash
-# Test Parkinson's prediction
-curl -X POST "http://localhost:8000/predict" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "UPDRS": 67.83,
-    "FunctionalAssessment": 2.13,
-    "MoCA": 29.92,
-    "Tremor": 1,
-    "Rigidity": 0,
-    "Bradykinesia": 0,
-    "Age": 70,
-    "AlcoholConsumption": 2.24,
-    "BMI": 15.36,
-    "SleepQuality": 9.93,
-    "DietQuality": 6.49,
-    "CholesterolTriglycerides": 395.66
-  }'
-```
-
-### Using Python requests
-
-```python
-import requests
-
-url = "http://localhost:8000/predict"
-data = {
-    "UPDRS": 67.83,
-    "FunctionalAssessment": 2.13,
-    "MoCA": 29.92,
-    "Tremor": 1,
-    "Rigidity": 0,
-    "Bradykinesia": 0,
-    "Age": 70,
-    "AlcoholConsumption": 2.24,
-    "BMI": 15.36,
-    "SleepQuality": 9.93,
-    "DietQuality": 6.49,
-    "CholesterolTriglycerides": 395.66
-}
-
-response = requests.post(url, json=data)
-print(response.json())
-```
-
-## 🏗️ Project Structure
-
-```
-model_api/
-├── app.py                 # Main FastAPI application
-├── requirements.txt       # Python dependencies
-├── Dockerfile            # Docker configuration
-├── vercel.json          # Vercel deployment config
-├── vercel_app.py        # Vercel entry point
-├── .gitignore           # Git ignore rules
-└── README.md            # Project documentation
-```
-
-## 🚀 Deployment Options
+## 🚀 Deployment
 
 ### Local Development
+
+1. Clone the repository:
 ```bash
-uvicorn app:app --reload --host 0.0.0.0 --port 8000
+git clone <repository-url>
+cd parkinson_model_api
 ```
 
-### Docker
+2. Install dependencies:
 ```bash
-# Build image
-docker build -t medical-api .
-
-# Run container
-docker run -p 8000:8000 medical-api
+pip install -r requirements.txt
 ```
 
-### Vercel Serverless
-The project includes Vercel configuration for serverless deployment:
+3. Run the application:
 ```bash
-vercel --prod
+uvicorn app:app --reload
 ```
 
-## 🔧 Environment Variables
+### Docker Deployment
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `GOOGLE_APPLICATION_CREDENTIALS` | Path to Google Cloud service account key | Yes |
-| `CUDA_VISIBLE_DEVICES` | GPU configuration (set to -1 for CPU) | No |
-| `TF_CPP_MIN_LOG_LEVEL` | TensorFlow logging level | No |
+1. Build the Docker image:
+```bash
+docker build -t parkinson-model-api .
+```
 
-## 📊 Model Information
+2. Run the container:
+```bash
+docker run -d -p 8000:8000 parkinson-model-api
+```
 
-- **Models**: Automatically downloaded from Google Cloud Storage
-- **Storage**: Models are cached locally in `models/` directory (excluded from git)
-- **Types**: Support for scikit-learn, TensorFlow/Keras models
-- **Size**: Models range from 1KB to 9MB
+### Cloud Run Deployment
 
-## 🔄 Development Workflow
+1. Tag the image:
+```bash
+docker tag parkinson-model-api gcr.io/[PROJECT-ID]/my-fastapi-app
+```
 
-1. **Clone and Setup**:
-   ```bash
-   git clone https://github.com/mohammed-2-5/model_api.git
-   cd model_api
-   python -m venv .venv
-   .venv\Scripts\activate  # Windows
-   pip install -r requirements.txt
-   ```
+2. Push to Google Container Registry:
+```bash
+docker push gcr.io/[PROJECT-ID]/my-fastapi-app
+```
 
-2. **Run Development Server**:
-   ```bash
-   uvicorn app:app --reload
-   ```
+3. Deploy to Cloud Run:
+```bash
+gcloud run deploy my-fastapi-app \
+  --image gcr.io/[PROJECT-ID]/my-fastapi-app \
+  --platform managed \
+  --region [REGION] \
+  --allow-unauthenticated
+```
 
-3. **Test the API**:
-   - Visit http://localhost:8000/docs for interactive testing
-   - Use curl or Python requests for programmatic testing
+## 📝 Input Data Validation
+
+The API includes comprehensive input validation:
+- Checks for all-zero inputs
+- Validates feature names
+- Provides clear error messages for incorrect or missing features
+- Supports multiple naming conventions through alias mapping
+
+## 🔒 Security
+
+- Environment variables for sensitive configurations
+- Google Cloud Storage for model storage
+- Input validation to prevent malicious data
+
+## 📊 Excel File Format
+
+For batch predictions, prepare Excel files with appropriate column names as shown in the single prediction examples. The API supports both exact column names and common aliases.
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-## 📝 License
+## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🆘 Support
-
-If you encounter any issues:
-
-1. Check the [Issues](https://github.com/mohammed-2-5/model_api/issues) page
-2. Create a new issue with detailed description
-3. Include error logs and environment information
-
-## 🔄 API Response Format
-
-All endpoints return JSON responses with consistent structure:
-
-```json
-{
-  "prediction_class": "healthy|disease_name",
-  "prediction_value": 0.85,
-  "result": "Human-readable result message"
-}
-```
-
----
-
-**Made with ❤️ by Mohammed** | [GitHub](https://github.com/mohammed-2-5/model_api)
+This project is licensed under the MIT License - see the LICENSE file for details.

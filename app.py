@@ -138,7 +138,7 @@ async def predict_parkinson_image(file: UploadFile = File(...)):
             "prediction_value": value}
 
 # ═══════════════════════════════════════════════════════════════════════
-#                W  I  L  S  O  N ’ S   D  I  S  E  A  S  E
+#                W  I  L  S  O  N ' S   D  I  S  E  A  S  E
 # ═══════════════════════════════════════════════════════════════════════
 
 class WilsonInput(BaseModel):
@@ -176,9 +176,122 @@ async def predict_wilson(data: WilsonInput):
         ),
     }
 
+def _prepare_wilson_df(raw_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Prepare Wilson's disease data from Excel for prediction:
+    • Normalizes column names
+    • Adds missing columns with default 0
+    • Scales features using the pre-trained scaler
+    Returns a cleaned DataFrame ready for model.predict()
+    """
+    # Map Excel columns to model's expected feature names
+    column_map = {
+        "Age": "Age",
+        "ATB7B Gene Mutation": "ATB7B Gene Mutation",
+        "Kayser-Fleischer Rings": "Kayser-Fleischer Rings",
+        "Copper in Blood Serum": "Copper in Blood Serum",
+        "Copper in Urine": "Copper in Urine",
+        "Neurological Symptoms Score": "Neurological Symptoms Score",
+        "Ceruloplasmin Level": "Ceruloplasmin Level",
+        "AST": "AST",
+        "ALT": "ALT",
+        "Family History": "Family History",
+        "Gamma-Glutamyl Transferase (GGT)": "Gamma-Glutamyl Transferase (GGT)",
+        "Total_Bilirubin": "Total Bilirubin"
+    }
+
+    # Rename columns according to mapping
+    df = raw_df.copy()
+    df.columns = [col.strip() for col in df.columns]  # Remove any whitespace
+    df = df.rename(columns=column_map)
+
+    # Get expected columns from scaler
+    expected_cols = wilson_scaler.feature_names_in_.tolist()
+
+    # Create DataFrame with all expected columns, filled with 0s
+    result_df = pd.DataFrame(0, index=df.index, columns=expected_cols)
+
+    # Fill in values from input data where we have them
+    for excel_col, model_col in column_map.items():
+        if excel_col in raw_df.columns and model_col in expected_cols:
+            result_df[model_col] = pd.to_numeric(df[model_col], errors='coerce').fillna(0)
+
+    # Set default values for missing columns that might be important
+    if 'Sex' not in result_df.columns:
+        result_df['Sex'] = 0  # Default to 0 (can be adjusted based on your encoding)
+    if 'Region' not in result_df.columns:
+        result_df['Region'] = 0  # Default region
+    if 'Socioeconomic Status' not in result_df.columns:
+        result_df['Socioeconomic Status'] = 0  # Middle status
+    if 'Alcohol Use' not in result_df.columns:
+        result_df['Alcohol Use'] = 0  # No alcohol use
+    if 'BMI' not in result_df.columns:
+        result_df['BMI'] = 22  # Normal BMI
+    if 'Psychiatric Symptoms' not in result_df.columns:
+        result_df['Psychiatric Symptoms'] = 0  # No symptoms
+    if 'Cognitive Function Score' not in result_df.columns:
+        result_df['Cognitive Function Score'] = 0  # Normal cognitive function
+    if 'Free Copper in Blood Serum' not in result_df.columns:
+        result_df['Free Copper in Blood Serum'] = result_df['Copper in Blood Serum'] * 0.1  # Estimate from total copper
+    if 'Alkaline Phosphatase (ALP)' not in result_df.columns:
+        result_df['Alkaline Phosphatase (ALP)'] = 0
+    if 'Prothrombin Time / INR' not in result_df.columns:
+        result_df['Prothrombin Time / INR'] = 1  # Normal INR
+    if 'Albumin' not in result_df.columns:
+        result_df['Albumin'] = 4  # Normal albumin level
+
+    # Scale the features
+    scaled_data = wilson_scaler.transform(result_df)
+    return pd.DataFrame(scaled_data, columns=expected_cols)
+
+@app.post("/predict_wilson_excel",
+          tags=["Wilson disease – batch"],
+          summary="Upload an Excel sheet and get Wilson's disease predictions for every row")
+async def predict_wilson_excel(file: UploadFile = File(...)):
+    if not file.filename.lower().endswith((".xls", ".xlsx")):
+        raise HTTPException(status_code=415, detail="Please upload an .xls or .xlsx file")
+
+    try:
+        binary = await file.read()
+        df = pd.read_excel(io.BytesIO(binary))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Could not read Excel file: {exc}")
+
+    if df.empty:
+        raise HTTPException(status_code=400, detail="Uploaded sheet contains no rows")
+
+    # Print expected vs actual columns for debugging
+    print("Expected columns:", wilson_scaler.feature_names_in_.tolist())
+    print("Received columns:", df.columns.tolist())
+
+    # Prepare data and predict
+    try:
+        clean = _prepare_wilson_df(df)
+        # For Sequential model, get raw predictions (probabilities)
+        probs = wilson_model.predict(clean)
+        # Convert probabilities to binary predictions
+        preds = (probs > 0.5).astype(int)
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Error processing data: {str(e)}\nExpected columns: {wilson_scaler.feature_names_in_.tolist()}"
+        )
+
+    result = [
+        {
+            "row": int(i) + 2,  # +2 for Excel row numbers (header = 1)
+            "prediction_class": "wilson" if p else "healthy",
+            "prediction_value": float(prob),  # probability score
+            "result": "The person has Wilson's disease" if p else "The person does not have Wilson's disease"
+        }
+        for i, (p, prob) in enumerate(zip(preds, probs))
+    ]
+    return {"rows": len(result), "predictions": result}
+
 # ═══════════════════════════════════════════════════════════════════════
 #                    L i v e r    E N D P O I N T S
 # ═══════════════════════════════════════════════════════════════════════
+
 class LiverInput(BaseModel):
     Total_Bilirubin: float = Field(..., alias="Total Bilirubin")
     Direct_Bilirubin: float = Field(..., alias="Direct Bilirubin")
@@ -196,18 +309,13 @@ class LiverInput(BaseModel):
         populate_by_name = True
         extra = "allow"
 
-@app.post("/predict_liver")
-async def predict_liver(data: dict):
-    import pandas as pd
-
-    # Convert incoming dict to DataFrame
-    input_df = pd.DataFrame([data])
-
-    # Align columns exactly to what the model expects
-    input_df = input_df.reindex(columns=liver_model.feature_names_in_, fill_value=0)
-
+@app.post("/predict_liver", tags=["Liver disease – numeric"])
+async def predict_liver(data: LiverInput):
+    df = pd.DataFrame([data.dict(by_alias=True)])
+    df = df.reindex(columns=liver_model.feature_names_in_, fill_value=0)
+    
     # Predict directly (no scaling!)
-    pred = liver_model.predict(input_df)[0]
+    pred = liver_model.predict(df)[0]
 
     msg = "The person has liver disease" if pred == 1 else "The person does not have liver disease"
     return {
@@ -216,180 +324,174 @@ async def predict_liver(data: dict):
         "result": msg
     }
 
-# ═══════════════════════════════════════════════════════════════════════
-#              C O L O R E C T A L   C A N C E R   E N D P O I N T S
-# ═══════════════════════════════════════════════════════════════════════
-
-class ColorectalInput(BaseModel):
-    Age: int = Field(..., description="Patient age in years", example=65)
-    Gender: str = Field(..., description="Patient gender", example="Male", enum=["Male", "Female"])
-    BMI: float = Field(..., description="Body Mass Index", example=28.5)
-    Lifestyle: str = Field(..., description="Lifestyle category", example="Smoker", 
-                          enum=["Sedentary", "Active", "Moderate", "Smoker", "Non-smoker", "Athlete"])
-    Family_History_CRC: str = Field(..., alias="Family_History_CRC", 
-                                   description="Family history of colorectal cancer", 
-                                   example="Yes", enum=["Yes", "No"])
-    Pre_existing_Conditions: str = Field(..., alias="Pre-existing Conditions",
-                                        description="Pre-existing medical conditions",
-                                        example="Diabetes",
-                                        enum=["None", "Diabetes", "Hypertension", "Heart Disease", "Obesity", "IBD", "Polyps"])
-    Carbohydrates_g: float = Field(..., alias="Carbohydrates (g)", 
-                                  description="Daily carbohydrate intake in grams", example=300.0)
-    Proteins_g: float = Field(..., alias="Proteins (g)", 
-                             description="Daily protein intake in grams", example=80.0)
-    Fats_g: float = Field(..., alias="Fats (g)", 
-                         description="Daily fat intake in grams", example=50.0)
-    Vitamin_A_IU: float = Field(..., alias="Vitamin A (IU)", 
-                               description="Daily Vitamin A intake in International Units", example=3000.0)
-    Vitamin_C_mg: float = Field(..., alias="Vitamin C (mg)", 
-                               description="Daily Vitamin C intake in milligrams", example=60.0)
-    Iron_mg: float = Field(..., alias="Iron (mg)", 
-                          description="Daily iron intake in milligrams", example=12.0)
-
-    class Config:
-        populate_by_name = True
-        extra = "allow"
-        schema_extra = {
-            "examples": [
-                {
-                    "title": "High Risk Patient",
-                    "description": "Elderly male smoker with multiple risk factors",
-                    "value": {
-                        "Age": 76,
-                        "Gender": "Male",
-                        "BMI": 31.4,
-                        "Lifestyle": "Smoker",
-                        "Family_History_CRC": "Yes",
-                        "Pre-existing Conditions": "Obesity",
-                        "Carbohydrates (g)": 398.0,
-                        "Proteins (g)": 56.0,
-                        "Fats (g)": 61.0,
-                        "Vitamin A (IU)": 2500.0,
-                        "Vitamin C (mg)": 38.0,
-                        "Iron (mg)": 9.5
-                    }
-                },
-                {
-                    "title": "Low Risk Patient",
-                    "description": "Young active female with healthy lifestyle",
-                    "value": {
-                        "Age": 32,
-                        "Gender": "Female",
-                        "BMI": 22.1,
-                        "Lifestyle": "Active",
-                        "Family_History_CRC": "No",
-                        "Pre-existing Conditions": "None",
-                        "Carbohydrates (g)": 220.0,
-                        "Proteins (g)": 95.0,
-                        "Fats (g)": 35.0,
-                        "Vitamin A (IU)": 5200.0,
-                        "Vitamin C (mg)": 125.0,
-                        "Iron (mg)": 18.0
-                    }
-                },
-                {
-                    "title": "Medium Risk Patient",
-                    "description": "Middle-aged person with some risk factors",
-                    "value": {
-                        "Age": 55,
-                        "Gender": "Male",
-                        "BMI": 26.8,
-                        "Lifestyle": "Sedentary",
-                        "Family_History_CRC": "No",
-                        "Pre-existing Conditions": "Diabetes",
-                        "Carbohydrates (g)": 280.0,
-                        "Proteins (g)": 70.0,
-                        "Fats (g)": 45.0,
-                        "Vitamin A (IU)": 3800.0,
-                        "Vitamin C (mg)": 75.0,
-                        "Iron (mg)": 14.0
-                    }
-                }
-            ]
-        }
-
-@app.post("/predict_colorectal", tags=["Colorectal Cancer – numeric"])
-async def predict_colorectal(data: ColorectalInput):
+def _prepare_liver_df(raw_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Predict colorectal cancer risk based on demographic, lifestyle, and nutritional factors.
-    Returns: healthy or at_risk
+    Prepare liver disease data from Excel for prediction:
+    • Normalizes column names
+    • Adds missing columns with default 0
+    • Handles invisible spaces in feature names
+    Returns a cleaned DataFrame ready for model.predict()
     """
-    # Convert input to dictionary and then to DataFrame
-    input_dict = data.dict(by_alias=True)
-    input_df = pd.DataFrame([input_dict])
-    
-    # Get expected columns from model
-    if hasattr(colorectal_model, 'feature_names_in_'):
-        expected_columns = colorectal_model.feature_names_in_.tolist()
-    else:
-        expected_columns = [
-            'Age', 'Gender', 'BMI', 'Lifestyle', 'Family_History_CRC',
-            'Pre-existing Conditions', 'Carbohydrates (g)', 'Proteins (g)',
-            'Fats (g)', 'Vitamin A (IU)', 'Vitamin C (mg)', 'Iron (mg)'
-        ]
-    
-    # Add missing columns
-    for col in expected_columns:
-        if col not in input_df.columns:
-            input_df[col] = 0
-    
-    # Handle categorical encoding
-    # Gender
-    if 'Gender' in input_df.columns:
-        gender_map = {'Female': 0, 'Male': 1}
-        input_df['Gender'] = input_df['Gender'].map(gender_map).fillna(0)
-    
-    # Lifestyle
-    if 'Lifestyle' in input_df.columns:
-        lifestyle_map = {
-            'Sedentary': 0, 'Active': 1, 'Moderate': 2, 
-            'Smoker': 3, 'Non-smoker': 1, 'Athlete': 4
-        }
-        input_df['Lifestyle'] = input_df['Lifestyle'].map(lifestyle_map).fillna(0)
-    
-    # Family History
-    if 'Family_History_CRC' in input_df.columns:
-        family_map = {'No': 0, 'Yes': 1}
-        input_df['Family_History_CRC'] = input_df['Family_History_CRC'].map(family_map).fillna(0)
-    
-    # Pre-existing Conditions
-    if 'Pre-existing Conditions' in input_df.columns:
-        condition_map = {
-            'None': 0, 'Diabetes': 1, 'Hypertension': 2, 
-            'Heart Disease': 3, 'Obesity': 4, 'IBD': 5, 'Polyps': 6
-        }
-        input_df['Pre-existing Conditions'] = input_df['Pre-existing Conditions'].map(condition_map).fillna(0)
-    
+    # Expected columns (from model if available)
+    expected = (liver_model.feature_names_in_.tolist()
+               if hasattr(liver_model, "feature_names_in_")
+               else [
+                   "Total Bilirubin", "Direct Bilirubin",
+                   "Alkphos Alkaline Phosphotase",
+                   "Sgpt Alamine Aminotransferase",
+                   "Sgot Aspartate Aminotransferase",
+                   "ALB Albumin",
+                   "A/G Ratio Albumin and Globulin Ratio",
+                   "Total Protiens"
+               ])
+
+    # Accept both raw names and aliases
+    alias_map = {
+        "Total_Bilirubin": "Total Bilirubin",
+        "Direct_Bilirubin": "Direct Bilirubin",
+        "Alkphos_Alkaline_Phosphatase": "Alkphos Alkaline Phosphotase",
+        "Sgpt_Alamine_Aminotransferase": "Sgpt Alamine Aminotransferase",
+        "Sgot_Aspartate_Aminotransferase": "Sgot Aspartate Aminotransferase",
+        "ALB_Albumin": "ALB Albumin",
+        "AG_Ratio": "A/G Ratio Albumin and Globulin Ratio",
+        "Total_Proteins": "Total Protiens"
+    }
+    raw_df = raw_df.rename(columns=alias_map)
+
+    # Clean column names (remove invisible spaces)
+    raw_df.columns = [clean_column(col) for col in raw_df.columns]
+
+    # Ensure all columns exist
+    for col in expected:
+        if col not in raw_df.columns:
+            raw_df[col] = 0
+
     # Convert all to numeric
-    for col in expected_columns:
-        if col in input_df.columns:
-            input_df[col] = pd.to_numeric(input_df[col], errors='coerce').fillna(0)
-    
+    for col in expected:
+        raw_df[col] = pd.to_numeric(raw_df[col], errors="coerce").fillna(0)
+
     # Reorder columns to match model expectations
-    input_df = input_df[expected_columns]
-    
-    # Make prediction
+    return raw_df[expected]
+
+@app.post("/predict_liver_excel",
+          tags=["Liver disease – batch"],
+          summary="Upload an Excel sheet and get liver disease predictions for every row")
+async def predict_liver_excel(file: UploadFile = File(...)):
+    if not file.filename.lower().endswith((".xls", ".xlsx")):
+        raise HTTPException(status_code=415, detail="Please upload an .xls or .xlsx file")
+
     try:
-        pred = int(colorectal_model.predict(input_df)[0])
-        
-        if pred == 1:
-            result_class = "at_risk"
-            message = "The person is at risk for colorectal cancer"
-        else:
-            result_class = "healthy"
-            message = "The person is not at risk for colorectal cancer"
-        
-        return {
-            "prediction": result_class,
-            "message": message,
-            "risk_score": pred
+        binary = await file.read()
+        df = pd.read_excel(io.BytesIO(binary))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Could not read Excel file: {exc}")
+
+    if df.empty:
+        raise HTTPException(status_code=400, detail="Uploaded sheet contains no rows")
+
+    # Prepare data and predict
+    clean = _prepare_liver_df(df)
+    preds = liver_model.predict(clean)
+
+    result = [
+        {
+            "row": int(i) + 2,  # +2 for Excel row numbers (header = 1)
+            "prediction_class": "liver" if p else "healthy",
+            "prediction_value": int(p),
+            "result": "The person has liver disease" if p else "The person does not have liver disease"
         }
-        
-    except Exception as e:
-        return {
-            "error": f"Prediction failed: {str(e)}",
-            "prediction": "unknown",
-            "message": "Unable to make prediction due to data processing error"
+        for i, p in enumerate(preds)
+    ]
+    return {"rows": len(result), "predictions": result}
+
+# ──────────────────────────────────────────────────────────────────────
+#  C O L O R E C T A L   C A N C E R – batch (Excel upload)
+# ──────────────────────────────────────────────────────────────────────
+from fastapi import UploadFile, File, HTTPException
+import io
+
+# helper reused by both single-row & batch endpoints
+def _prepare_colorectal_df(raw_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    • Normalises column names / aliases
+    • Adds any missing columns with default 0
+    • Encodes categoricals numerically
+    • Reorders columns to exactly `expected_columns`
+    Returns a cleaned DataFrame ready for model.predict()
+    """
+    # 1️⃣ expected columns (pull from model if present)
+    expected = (colorectal_model.feature_names_in_.tolist()
+                if hasattr(colorectal_model, "feature_names_in_")
+                else [
+                    "Age","Gender","BMI","Lifestyle","Family_History_CRC",
+                    "Pre-existing Conditions","Carbohydrates (g)","Proteins (g)",
+                    "Fats (g)","Vitamin A (IU)","Vitamin C (mg)","Iron (mg)"
+                ])
+
+    # 2️⃣ Accept both "nice" aliases and raw names
+    alias_map = {
+        "Family History CRC": "Family_History_CRC",
+        "Pre-existing Conditions": "Pre-existing Conditions",
+        # add more if your spreadsheet uses other spellings
+    }
+    raw_df = raw_df.rename(columns=alias_map)
+
+    # 3️⃣ Ensure all columns exist
+    for c in expected:
+        if c not in raw_df.columns:
+            raw_df[c] = 0
+
+    # 4️⃣ Encode categoricals
+    gender_map      = {"Female": 0, "Male": 1}
+    lifestyle_map   = {
+        "Sedentary": 0, "Active": 1, "Moderate": 2,
+        "Smoker": 3, "Non-smoker": 1, "Athlete": 4
+    }
+    family_map      = {"No": 0, "Yes": 1}
+    condition_map   = {
+        "None": 0, "Diabetes": 1, "Hypertension": 2,
+        "Heart Disease": 3, "Obesity": 4, "IBD": 5, "Polyps": 6
+    }
+
+    raw_df["Gender"]                  = raw_df["Gender"].map(gender_map).fillna(0)
+    raw_df["Lifestyle"]               = raw_df["Lifestyle"].map(lifestyle_map).fillna(0)
+    raw_df["Family_History_CRC"]      = raw_df["Family_History_CRC"].map(family_map).fillna(0)
+    raw_df["Pre-existing Conditions"] = raw_df["Pre-existing Conditions"].map(condition_map).fillna(0)
+
+    # 5️⃣ Numeric coercion & column order
+    for c in expected:
+        raw_df[c] = pd.to_numeric(raw_df[c], errors="coerce").fillna(0)
+    return raw_df[expected]
+
+@app.post("/predict_colorectal_excel",
+          tags=["Colorectal Cancer – batch"],
+          summary="Upload an Excel sheet and get risk predictions for every row")
+async def predict_colorectal_excel(file: UploadFile = File(...)):
+    if not file.filename.lower().endswith((".xls", ".xlsx")):
+        raise HTTPException(status_code=415, detail="Please upload an .xls or .xlsx file")
+
+    # read entire workbook into memory (guard size in real deployments)
+    try:
+        binary = await file.read()
+        df     = pd.read_excel(io.BytesIO(binary))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Could not read Excel file: {exc}")
+
+    # empty sheet guard
+    if df.empty:
+        raise HTTPException(status_code=400, detail="Uploaded sheet contains no rows")
+
+    # data wrangling → model.predict
+    clean  = _prepare_colorectal_df(df)
+    preds  = colorectal_model.predict(clean)           # shape (n,)
+    result = [
+        {
+            "row": int(i) + 2,                         # +2 to match human Excel row numbers (header = row-1)
+            "prediction_class": "at_risk" if p else "healthy",
+            "prediction_value": int(p)
         }
+        for i, p in enumerate(preds)
+    ]
+    return {"rows": len(result), "predictions": result}
 
 # ═══════════════════════════════════════════════════════════════════════
