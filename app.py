@@ -22,7 +22,7 @@ import joblib
 import io
 
 from PIL import Image
-from google.cloud import storage
+
 from tensorflow.keras.models import load_model
 from sklearn.preprocessing import LabelEncoder
 
@@ -30,58 +30,34 @@ def clean_column(col):
     """Remove all types of whitespace and invisible characters from start/end of feature name."""
     return col.replace('\xa0', '').strip()
 
-# ── Google Cloud Storage settings ──────────────────────────────────────
-BUCKET_NAME = "parkinson_models"
-FILES = {
-    # Parkinson artefacts
-    "model.pkl":          "model.pkl",
-    "scaler.pkl":         "scaler.pkl",
-    "drawings.keras":     "drawings.keras",
-    # Wilson artefacts
-    "wilson_model.pkl":   "wilson_model.pkl",
-    "wilson_scaler.pkl":  "wilson_scaler.pkl",
-    # Liver artefacts
-    "liver_model.pkl":    "liver_model.pkl",
-    "liver_scaler.pkl":   "liver_scaler.pkl",
-    # Colorectal cancer artefacts
-    "colorectal_model.pkl": "colorectal_model.pkl",
-}
-
-def download_models_from_gcs() -> None:
-    """Download all artefacts once at startup."""
-    storage_client = storage.Client()
-    bucket = storage_client.bucket(BUCKET_NAME)
-    os.makedirs("models", exist_ok=True)
-
-    for filename, blob_name in FILES.items():
-        local_path = f"models/{filename}"
-        if not os.path.exists(local_path):
-            print(f"🔽  Downloading {filename} …")
-            bucket.blob(blob_name).download_to_filename(local_path)
 
 # ── FastAPI lifespan: load artefacts into memory ───────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global pd_model, pd_scaler, cnn, wilson_model, wilson_scaler, liver_model, liver_scaler, colorectal_model
+    global pd_model, pd_scaler, cnn
+    global wilson_model, wilson_scaler
+    global liver_model,  liver_scaler
+    global colorectal_model
 
-    download_models_from_gcs()
+    # لم يعد هناك تحميل؛ يكفي التأكّد من وجود المجلّد
+    if not os.path.isdir("models"):
+        raise RuntimeError("models/ directory is missing inside the container")
 
     # Parkinson
-    pd_model   = joblib.load("models/model.pkl")
-    pd_scaler  = joblib.load("models/scaler.pkl")
-    cnn        = load_model("models/drawings.keras")
+    pd_model  = joblib.load("models/model.pkl")
+    pd_scaler = joblib.load("models/scaler.pkl")
+    cnn       = load_model("models/drawings.keras")
 
     # Wilson
     wilson_model  = joblib.load("models/wilson_model.pkl")
     wilson_scaler = joblib.load("models/wilson_scaler.pkl")
-   
+
     # Liver
     liver_model  = joblib.load("models/liver_model.pkl")
     liver_scaler = joblib.load("models/liver_scaler.pkl")
-    # Clean feature names in scaler immediately after loading!
     liver_scaler.feature_names_in_ = [clean_column(f) for f in liver_scaler.feature_names_in_]
 
-    # Colorectal cancer
+    # Colorectal
     colorectal_model = joblib.load("models/colorectal_model.pkl")
 
     yield

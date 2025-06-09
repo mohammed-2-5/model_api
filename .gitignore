@@ -32,8 +32,6 @@ ENV/
 *.swp
 *.swo
 
-# Models directory (will be downloaded at runtime)
-models/
 
 # Logs
 *.log
@@ -49,13 +47,6 @@ models/
 # Docker
 .docker/
 
-# Model files (downloaded from GCS at runtime)
-*.pkl
-*.keras
-*.h5
-*.joblib
-*.model
-*.bin
 
 # Data files
 *.csv
@@ -99,7 +90,7 @@ tmp/
 *.pdf
 *.zip
 *.tar.gz
-*.rar
+*.rarس
 
 # Test coverage
 htmlcov/

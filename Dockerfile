@@ -1,28 +1,17 @@
-# Use Python 3.10 slim image as base
+# استخدام صورة Python الأساسية
 FROM python:3.10-slim
 
-# Set working directory
+# تحديد مجلد العمل داخل الحاوية
 WORKDIR /app
 
-# Install system dependencies required for numpy/scipy
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements first to leverage Docker cache
-COPY requirements.txt .
-
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
+# نسخ جميع ملفات المشروع إلى الحاوية
 COPY . .
 
-# Create models directory
-RUN mkdir -p models
+# تثبيت الحزم المطلوبة
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose port
-EXPOSE 8000
+# تعيين المنفذ الذي سيعمل عليه التطبيق
+EXPOSE 8080
 
-# Command to run the application
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# أمر تشغيل التطبيق باستخدام Uvicorn
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
